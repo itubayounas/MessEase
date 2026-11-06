@@ -3,7 +3,8 @@ import '../models/meal_selection_model.dart';
 import '../services/meal_service.dart';
 import '../utils/date_helpers.dart';
 
-// FR-3.4 / FR-3.6: live count of ticked meals per day, for kitchen planning.
+// FR-3.4 / FR-3.6: live count of ordered plates per item and meal for a
+// day, for kitchen planning.
 class KitchenCountsPage extends StatefulWidget {
   const KitchenCountsPage({super.key});
 
@@ -67,7 +68,7 @@ class _KitchenCountsPageState extends State<KitchenCountsPage> {
           ),
         ),
         Expanded(
-          child: StreamBuilder<Map<String, int>>(
+          child: StreamBuilder<Map<String, Map<String, int>>>(
             stream: _service.watchCounts(dateKey(_date)),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
@@ -84,34 +85,79 @@ class _KitchenCountsPageState extends State<KitchenCountsPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
                   const Text(
-                    'Students who ticked each meal',
+                    'Plates ordered for each item',
                     style: TextStyle(color: Colors.grey),
                   ),
                   const SizedBox(height: 8),
                   for (final meal in mealTypes)
-                    Card(
-                      child: ListTile(
-                        leading: Icon(_icons[meal], color: Colors.blue, size: 32),
-                        title: Text(
-                          capitalize(meal),
-                          style: const TextStyle(fontSize: 18),
-                        ),
-                        trailing: Text(
-                          '${counts[meal]}',
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
-                          ),
-                        ),
-                      ),
-                    ),
+                    _mealCard(meal, counts[meal] ?? {}),
+                  const SizedBox(height: 16),
                 ],
               );
             },
           ),
         ),
       ],
+    );
+  }
+
+  Widget _mealCard(String meal, Map<String, int> items) {
+    // Most ordered first.
+    final entries = items.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final total = items.values.fold<int>(0, (sum, n) => sum + n);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_icons[meal], color: Colors.blue, size: 28),
+                const SizedBox(width: 10),
+                Text(
+                  capitalize(meal),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                Text(
+                  '$total plate${total == 1 ? '' : 's'}',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
+            if (entries.isEmpty)
+              const Text(
+                'No orders yet',
+                style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+              )
+            else
+              for (final e in entries)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(e.key, style: const TextStyle(fontSize: 16)),
+                      ),
+                      Text(
+                        '${e.value}',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+          ],
+        ),
+      ),
     );
   }
 }

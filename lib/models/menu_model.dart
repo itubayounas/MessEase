@@ -9,29 +9,41 @@ const List<String> weekDays = [
   'sunday',
 ];
 
-// The menu of one day, with the price of each meal.
+// One orderable item of a meal, e.g. "Chicken Biryani" at Rs 250.
 // A price of 0 means "not set" (the default meal rate is used instead).
-// The Firestore document id is the lowercase day name.
+class MenuItem {
+  final String name;
+  final double price;
+
+  const MenuItem({required this.name, this.price = 0});
+
+  Map<String, dynamic> toMap() => {'name': name, 'price': price};
+
+  factory MenuItem.fromMap(Map<String, dynamic> map) {
+    return MenuItem(
+      name: map['name'] as String? ?? '',
+      price: (map['price'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+// The menu of one day. Each meal (breakfast / lunch / dinner) has a list
+// of items, so lunch can offer both "Chicken Biryani" and "2 Roti + Salan",
+// each with its own price. The Firestore document id is the lowercase day name.
 class DayMenu {
   final String day;
-  final String breakfast;
-  final String lunch;
-  final String dinner;
-  final double breakfastPrice;
-  final double lunchPrice;
-  final double dinnerPrice;
+  final List<MenuItem> breakfast;
+  final List<MenuItem> lunch;
+  final List<MenuItem> dinner;
 
   const DayMenu({
     required this.day,
-    this.breakfast = '',
-    this.lunch = '',
-    this.dinner = '',
-    this.breakfastPrice = 0,
-    this.lunchPrice = 0,
-    this.dinnerPrice = 0,
+    this.breakfast = const [],
+    this.lunch = const [],
+    this.dinner = const [],
   });
 
-  String dishOf(String meal) {
+  List<MenuItem> itemsOf(String meal) {
     switch (meal) {
       case 'breakfast':
         return breakfast;
@@ -42,37 +54,40 @@ class DayMenu {
     }
   }
 
-  double priceOf(String meal) {
-    switch (meal) {
-      case 'breakfast':
-        return breakfastPrice;
-      case 'lunch':
-        return lunchPrice;
-      default:
-        return dinnerPrice;
-    }
-  }
-
   Map<String, dynamic> toMap() => {
         'day': day,
-        'breakfast': breakfast,
-        'lunch': lunch,
-        'dinner': dinner,
-        'breakfastPrice': breakfastPrice,
-        'lunchPrice': lunchPrice,
-        'dinnerPrice': dinnerPrice,
+        'breakfast': breakfast.map((i) => i.toMap()).toList(),
+        'lunch': lunch.map((i) => i.toMap()).toList(),
+        'dinner': dinner.map((i) => i.toMap()).toList(),
       };
 
+  // Also understands the older format (one text per meal plus
+  // "<meal>Price"), so menus saved earlier still show up.
+  static List<MenuItem> _parse(Map<String, dynamic> map, String meal) {
+    final v = map[meal];
+    if (v is List) {
+      return [
+        for (final e in v)
+          if (e is Map) MenuItem.fromMap(Map<String, dynamic>.from(e)),
+      ].where((i) => i.name.isNotEmpty).toList();
+    }
+    if (v is String && v.trim().isNotEmpty) {
+      return [
+        MenuItem(
+          name: v.trim(),
+          price: (map['${meal}Price'] as num?)?.toDouble() ?? 0,
+        ),
+      ];
+    }
+    return [];
+  }
+
   factory DayMenu.fromMap(String day, Map<String, dynamic> map) {
-    double price(String key) => (map[key] as num?)?.toDouble() ?? 0;
     return DayMenu(
       day: day,
-      breakfast: map['breakfast'] as String? ?? '',
-      lunch: map['lunch'] as String? ?? '',
-      dinner: map['dinner'] as String? ?? '',
-      breakfastPrice: price('breakfastPrice'),
-      lunchPrice: price('lunchPrice'),
-      dinnerPrice: price('dinnerPrice'),
+      breakfast: _parse(map, 'breakfast'),
+      lunch: _parse(map, 'lunch'),
+      dinner: _parse(map, 'dinner'),
     );
   }
 }

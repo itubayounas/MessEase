@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/menu_model.dart';
 import '../services/menu_service.dart';
 
-// Bottom sheet where the admin edits one day's dishes and their prices.
+// Bottom sheet where the admin edits one day: for each meal, a list of
+// items (name + price). Items can be added and removed.
 Future<void> showEditMenuSheet(BuildContext context, DayMenu menu) {
   return showModalBottomSheet(
     context: context,
@@ -12,6 +13,27 @@ Future<void> showEditMenuSheet(BuildContext context, DayMenu menu) {
     ),
     builder: (_) => _EditMenuSheet(menu: menu),
   );
+}
+
+// The two text boxes of one item row.
+class _Row {
+  final TextEditingController name;
+  final TextEditingController price;
+
+  _Row({String name = '', double price = 0})
+      : name = TextEditingController(text: name),
+        price = TextEditingController(
+          text: price <= 0
+              ? ''
+              : (price == price.roundToDouble()
+                  ? price.toStringAsFixed(0)
+                  : price.toString()),
+        );
+
+  void dispose() {
+    name.dispose();
+    price.dispose();
+  }
 }
 
 class _EditMenuSheet extends StatefulWidget {
@@ -30,28 +52,29 @@ class _EditMenuSheetState extends State<_EditMenuSheet> {
     'dinner': Icons.dinner_dining,
   };
 
-  late final Map<String, TextEditingController> _dish = {
+  late final Map<String, List<_Row>> _rows = {
     for (final m in _meals)
-      m: TextEditingController(text: widget.menu.dishOf(m)),
+      m: [
+        for (final item in widget.menu.itemsOf(m))
+          _Row(name: item.name, price: item.price),
+        // Always start with at least one empty row to type into.
+        if (widget.menu.itemsOf(m).isEmpty) _Row(),
+      ],
   };
 
-  // Empty box when no price is set yet; whole numbers shown without ".0".
-  late final Map<String, TextEditingController> _price = {
-    for (final m in _meals)
-      m: TextEditingController(text: _priceText(widget.menu.priceOf(m))),
-  };
-
+  // Removed rows are disposed together at the end, not while still on screen.
+  final List<_Row> _removed = [];
   bool _saving = false;
-
-  static String _priceText(double v) {
-    if (v <= 0) return '';
-    return v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
-  }
 
   @override
   void dispose() {
-    for (final c in [..._dish.values, ..._price.values]) {
-      c.dispose();
+    for (final rows in _rows.values) {
+      for (final r in rows) {
+        r.dispose();
+      }
+    }
+    for (final r in _removed) {
+      r.dispose();
     }
     super.dispose();
   }
@@ -62,22 +85,60 @@ class _EditMenuSheetState extends State<_EditMenuSheet> {
     );
   }
 
-  Future<void> _save() async {
-    // Empty price = not set (0). Anything else must be a number >= 0.
-    final prices = <String, double>{};
-    for (final m in _meals) {
-      final text = _price[m]!.text.trim();
-      if (text.isEmpty) {
-        prices[m] = 0;
-        continue;
+  void _addRow(String meal) => setState(() => _rows[meal]!.add(_Row()));
+
+  void _removeRow(String meal, _Row row) {
+    setState(() {
+      _rows[meal]!.remove(row);
+      _removed.add(row);
+    });
+  }
+
+  // Turns the text boxes into items. Empty rows are skipped; every other row
+  // needs a name and a price above 0. Returns null after showing an error.
+  Map<String, List<MenuItem>>? _collect() {
+    final result = <String, List<MenuItem>>{};
+
+    for (final meal in _meals) {
+      final items = <MenuItem>[];
+      final seen = <String>{};
+
+      for (final row in _rows[meal]!) {
+        final name = row.name.text.trim();
+        final priceText = row.price.text.trim();
+
+        // A completely empty row is just skipped.
+        if (name.isEmpty && priceText.isEmpty) continue;
+
+        if (name.isEmpty) {
+          _error('Enter an item name for the price you typed in $meal.');
+          return null;
+        }
+
+        // Every item must have a price greater than 0.
+        final price = double.tryParse(priceText);
+        if (priceText.isEmpty) {
+          _error('Enter a price for "$name".');
+          return null;
+        }
+        if (price == null || price <= 0) {
+          _error('Enter a valid price greater than 0 for "$name".');
+          return null;
+        }
+        if (!seen.add(name.toLowerCase())) {
+          _error('"$name" appears twice in $meal.');
+          return null;
+        }
+        items.add(MenuItem(name: name, price: price));
       }
-      final v = double.tryParse(text);
-      if (v == null || v < 0) {
-        _error('Enter a valid price for $m, or leave it empty.');
-        return;
-      }
-      prices[m] = v;
+      result[meal] = items;
     }
+    return result;
+  }
+
+  Future<void> _save() async {
+    final items = _collect();
+    if (items == null) return;
 
     setState(() => _saving = true);
 
@@ -87,12 +148,9 @@ class _EditMenuSheetState extends State<_EditMenuSheet> {
     try {
       await MenuService().saveDay(DayMenu(
         day: widget.menu.day,
-        breakfast: _dish['breakfast']!.text.trim(),
-        lunch: _dish['lunch']!.text.trim(),
-        dinner: _dish['dinner']!.text.trim(),
-        breakfastPrice: prices['breakfast']!,
-        lunchPrice: prices['lunch']!,
-        dinnerPrice: prices['dinner']!,
+        breakfast: items['breakfast']!,
+        lunch: items['lunch']!,
+        dinner: items['dinner']!,
       ));
       navigator.pop();
       messenger.showSnackBar(
@@ -113,42 +171,74 @@ class _EditMenuSheetState extends State<_EditMenuSheet> {
     }
   }
 
-  Widget _mealFields(String meal) {
+  Widget _mealSection(String meal) {
     final label = meal[0].toUpperCase() + meal.substring(1);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: _dish[meal],
-              decoration: InputDecoration(
-                labelText: label,
-                prefixIcon: Icon(_icons[meal]),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+    final rows = _rows[meal]!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(_icons[meal], color: Colors.blue),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => _addRow(meal),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add item'),
+            ),
+          ],
+        ),
+        for (final row in rows)
+          Padding(
+            key: ObjectKey(row),
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: row.name,
+                    decoration: InputDecoration(
+                      labelText: 'Item',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: row.price,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Price (Rs)',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  tooltip: 'Remove item',
+                  onPressed: () => _removeRow(meal, row),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: TextField(
-              controller: _price[meal],
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Price (Rs)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 
@@ -176,11 +266,12 @@ class _EditMenuSheetState extends State<_EditMenuSheet> {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Price is per plate. If left empty, the default meal rate is used.',
+              'Add one line per orderable item, with its price per plate. '
+              'Every item needs a price. Students tick the items they want.',
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 16),
-            for (final m in _meals) _mealFields(m),
+            for (final m in _meals) _mealSection(m),
             SizedBox(
               width: double.infinity,
               height: 48,

@@ -164,7 +164,7 @@ class _BillingPageState extends State<BillingPage> {
           margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: ListTile(
             leading: const Icon(Icons.payments, color: Colors.blue, size: 32),
-            title: const Text('Default rate per meal'),
+            title: const Text('Rate per meal'),
             subtitle: Text(
               rate == 0 ? 'Not set yet' : money(rate),
               style: TextStyle(
@@ -317,7 +317,7 @@ class _RateDialogState extends State<_RateDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Default rate per meal'),
+      title: const Text('Rate per meal'),
       content: TextField(
         controller: _controller,
         autofocus: true,

@@ -185,7 +185,7 @@ class _ChargesPageState extends State<ChargesPage> {
         dense: true,
         leading: const Icon(Icons.restaurant, color: Colors.teal),
         title: Text(title),
-        subtitle: Text(capitalize(item.meal)),
+        subtitle: Text('${capitalize(item.meal)} - ${item.item}'),
         trailing: Text(
           money(item.amount),
           style: const TextStyle(fontWeight: FontWeight.bold),

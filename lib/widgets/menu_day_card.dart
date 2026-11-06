@@ -67,44 +67,55 @@ class MenuDayCard extends StatelessWidget {
               ],
             ),
             const Divider(),
-            _mealRow(Icons.free_breakfast, 'Breakfast', menu.breakfast, menu.breakfastPrice),
-            _mealRow(Icons.lunch_dining, 'Lunch', menu.lunch, menu.lunchPrice),
-            _mealRow(Icons.dinner_dining, 'Dinner', menu.dinner, menu.dinnerPrice),
+            _mealSection(Icons.free_breakfast, 'Breakfast', menu.breakfast),
+            _mealSection(Icons.lunch_dining, 'Lunch', menu.lunch),
+            _mealSection(Icons.dinner_dining, 'Dinner', menu.dinner),
           ],
         ),
       ),
     );
   }
 
-  Widget _mealRow(IconData icon, String label, String value, double price) {
+  // A meal heading followed by one line per item, with its price.
+  Widget _mealSection(IconData icon, String label, List<MenuItem> items) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+          Row(
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 10),
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
           ),
-          Expanded(
-            child: Text(
-              value.isEmpty ? 'Not set' : value,
-              style: TextStyle(
-                color: value.isEmpty ? Colors.grey : null,
-                fontStyle: value.isEmpty ? FontStyle.italic : null,
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(left: 30, top: 2),
+              child: Text(
+                'Not set',
+                style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
               ),
-            ),
-          ),
-          if (price > 0)
-            Text(
-              money(price),
-              style: TextStyle(fontWeight: FontWeight.bold, color: color),
-            ),
+            )
+          else
+            for (final item in items)
+              Padding(
+                padding: const EdgeInsets.only(left: 30, top: 2),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(item.name)),
+                    if (item.price > 0)
+                      Text(
+                        money(item.price),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: color,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
         ],
       ),
     );

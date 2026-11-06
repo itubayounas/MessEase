@@ -9,7 +9,9 @@ import '../services/meal_service.dart';
 import '../services/menu_service.dart';
 import '../utils/date_helpers.dart';
 
-// FR-3.1 / 3.2 / 3.3 / 3.5: tick or untick meals for each day of this week.
+// FR-3.1 / 3.2 / 3.3 / 3.5: tick or untick the items you want for each day
+// of this week. A meal can offer several items (e.g. Biryani and Salan), and
+// each ticked item is charged at its own price.
 // Days inside an approved leave are locked ("On leave").
 class MyMealsPage extends StatefulWidget {
   const MyMealsPage({super.key});
@@ -27,7 +29,12 @@ class _MyMealsPageState extends State<MyMealsPage> {
   late final _mineStream = _mealService.watchMine(_uid);
   late final _leaveStream = LeaveService().watchMine(_uid);
 
-  Future<void> _toggle(DateTime day, String meal, bool ticked) async {
+  Future<void> _toggle(
+    DateTime day,
+    String meal,
+    MenuItem item,
+    bool ticked,
+  ) async {
     // Re-check at tap time, in case the cutoff passed while the screen was open.
     if (isMealLocked(day)) {
       _snack('Selection for this day is locked.', Colors.red);
@@ -35,10 +42,12 @@ class _MyMealsPageState extends State<MyMealsPage> {
       return;
     }
     try {
-      await _mealService.setMeal(
+      await _mealService.setItem(
         uid: _uid,
         date: dateKey(day),
         meal: meal,
+        itemName: item.name,
+        price: item.price,
         ticked: ticked,
       );
     } catch (e) {
@@ -87,7 +96,7 @@ class _MyMealsPageState extends State<MyMealsPage> {
                   padding: const EdgeInsets.all(16),
                   children: [
                     Text(
-                      'Tick the meals you will eat. Each day closes at '
+                      'Tick the items you will eat. Each day closes at '
                       '$cutoffLabel the evening before.',
                       style: const TextStyle(color: Colors.grey),
                     ),
@@ -112,6 +121,12 @@ class _MyMealsPageState extends State<MyMealsPage> {
     );
   }
 
+  static const _mealIcons = {
+    'breakfast': Icons.free_breakfast,
+    'lunch': Icons.lunch_dining,
+    'dinner': Icons.dinner_dining,
+  };
+
   Widget _dayCard({
     required DateTime day,
     required bool isToday,
@@ -121,17 +136,6 @@ class _MyMealsPageState extends State<MyMealsPage> {
   }) {
     final locked = isMealLocked(day) || onLeave;
     const color = Colors.teal;
-
-    String dish(String meal) {
-      final v = meal == 'breakfast'
-          ? menu.breakfast
-          : meal == 'lunch'
-              ? menu.lunch
-              : menu.dinner;
-      if (v.isEmpty) return 'Menu not set';
-      final p = menu.priceOf(meal);
-      return p > 0 ? '$v - ${money(p)}' : v;
-    }
 
     final statusColor = onLeave
         ? Colors.blue
@@ -152,6 +156,7 @@ class _MyMealsPageState extends State<MyMealsPage> {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -191,16 +196,44 @@ class _MyMealsPageState extends State<MyMealsPage> {
                 ],
               ),
             ),
-            for (final meal in mealTypes)
-              CheckboxListTile(
-                dense: true,
-                activeColor: color,
-                value: selection.isTicked(meal),
-                onChanged:
-                    locked ? null : (v) => _toggle(day, meal, v ?? false),
-                title: Text(capitalize(meal)),
-                subtitle: Text(dish(meal)),
+            for (final meal in mealTypes) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
+                  children: [
+                    Icon(_mealIcons[meal], size: 18, color: color),
+                    const SizedBox(width: 8),
+                    Text(
+                      capitalize(meal),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ),
+              if (menu.itemsOf(meal).isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(42, 2, 16, 4),
+                  child: Text(
+                    'Menu not set',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                )
+              else
+                for (final item in menu.itemsOf(meal))
+                  CheckboxListTile(
+                    dense: true,
+                    activeColor: color,
+                    value: selection.hasItem(meal, item.name),
+                    onChanged: locked
+                        ? null
+                        : (v) => _toggle(day, meal, item, v ?? false),
+                    title: Text(item.name),
+                    subtitle: item.price > 0 ? Text(money(item.price)) : null,
+                  ),
+            ],
           ],
         ),
       ),

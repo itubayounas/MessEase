@@ -1,12 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/meal_selection_model.dart';
 import '../utils/date_helpers.dart';
-import 'menu_service.dart';
-import 'settings_service.dart';
 
 // Collection "meal_selections": one document per student per day,
-// id = "<uid>_<yyyy-MM-dd>", fields: uid, date, breakfast, lunch, dinner,
-// plus breakfastRate / lunchRate / dinnerRate (rate when ticked).
+// id = "<uid>_<yyyy-MM-dd>", fields: uid, date and, per meal, a map of
+// the ticked items with their price:
+//   lunchItems: { "Chicken Biryani": 250, "2 Roti + Salan": 200 }
 class MealService {
   final _col = FirebaseFirestore.instance.collection('meal_selections');
 
@@ -24,43 +23,38 @@ class MealService {
     });
   }
 
-  // Tick (true) or untick (false) a single meal. merge:true leaves the
-  // other meals of that day untouched. When ticking, the current meal rate
-  // (the dish price, else the default rate) is saved with the meal so later price changes don't alter old charges.
-  Future<void> setMeal({
+  // Tick (true) or untick (false) one item of one meal. merge:true leaves
+  // all other items and meals of that day untouched. The price is saved
+  // with the item so later price changes don't alter old charges.
+  Future<void> setItem({
     required String uid,
     required String date,
     required String meal,
+    required String itemName,
+    required double price,
     required bool ticked,
-  }) async {
-    // Price = the dish's price on that weekday; if the admin gave the dish
-    // no price, fall back to the default meal rate.
-    double? rate;
-    if (ticked) {
-      final parsed = DateTime.tryParse(date);
-      if (parsed != null) {
-        rate = await MenuService().getPrice(dayNameOf(parsed), meal);
-      }
-      rate ??= await SettingsService().getRate();
-    }
-
-    await _col.doc('${uid}_$date').set({
+  }) {
+    return _col.doc('${uid}_$date').set({
       'uid': uid,
       'date': date,
-      meal: ticked,
-      if (rate != null) '${meal}Rate': rate,
+      '${meal}Items': {
+        itemName: ticked ? price : FieldValue.delete(),
+      },
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
-  // Admin / kitchen: how many students ticked each meal on [date].
-  Stream<Map<String, int>> watchCounts(String date) {
+  // Admin / kitchen: how many plates of each item were ticked on [date].
+  // Result: meal -> {item name: number of students}.
+  Stream<Map<String, Map<String, int>>> watchCounts(String date) {
     return _col.where('date', isEqualTo: date).snapshots().map((snap) {
-      final counts = {for (final m in mealTypes) m: 0};
+      final counts = {for (final m in mealTypes) m: <String, int>{}};
       for (final doc in snap.docs) {
         final sel = MealSelection.fromMap(doc.data());
         for (final m in mealTypes) {
-          if (sel.isTicked(m)) counts[m] = counts[m]! + 1;
+          for (final name in sel.itemsOf(m).keys) {
+            counts[m]![name] = (counts[m]![name] ?? 0) + 1;
+          }
         }
       }
       return counts;

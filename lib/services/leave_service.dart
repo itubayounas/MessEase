@@ -72,15 +72,16 @@ class LeaveService {
       for (final date in r.dates) {
         batch.set(
           _db.collection('meal_selections').doc('${r.uid}_$date'),
+          // No merge: this replaces the day's document, so every ticked
+          // item is cleared.
           {
             'uid': r.uid,
             'date': date,
-            'breakfast': false,
-            'lunch': false,
-            'dinner': false,
+            'breakfastItems': <String, dynamic>{},
+            'lunchItems': <String, dynamic>{},
+            'dinnerItems': <String, dynamic>{},
             'updatedAt': FieldValue.serverTimestamp(),
           },
-          SetOptions(merge: true),
         );
       }
     }

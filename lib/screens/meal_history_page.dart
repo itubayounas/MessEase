@@ -59,8 +59,9 @@ class _MealHistoryPageState extends State<MealHistoryPage> {
                   spacing: 6,
                   children: [
                     for (final m in e.tickedMeals)
+                      for (final name in e.itemsOf(m).keys)
                       Chip(
-                        label: Text(capitalize(m)),
+                        label: Text('${capitalize(m)}: $name'),
                         visualDensity: VisualDensity.compact,
                         padding: EdgeInsets.zero,
                       ),

@@ -18,16 +18,4 @@ class MenuService {
   Future<void> saveDay(DayMenu menu) {
     return _col.doc(menu.day).set(menu.toMap());
   }
-
-  // The price of one meal on one weekday, or null if none is set.
-  // Used when a student ticks a meal, so ticking never gets blocked.
-  Future<double?> getPrice(String day, String meal) async {
-    try {
-      final s = await _col.doc(day).get().timeout(const Duration(seconds: 3));
-      final v = (s.data()?['${meal}Price'] as num?)?.toDouble();
-      return (v != null && v > 0) ? v : null;
-    } catch (_) {
-      return null;
-    }
-  }
 }
