@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'admin_dashboard.dart';
 import 'login_page.dart';
 import 'student_dashboard.dart';
+import '../services/session_service.dart';
+import '../widgets/session_guard.dart';
 
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
@@ -61,7 +63,11 @@ class AuthWrapper extends StatelessWidget {
 
             // Navigate according to role
             if (role == 'student') {
-              return StudentDashboard(username: username);
+              // Students may be logged in on one device at a time.
+              return SessionGuard(
+                uid: user.uid,
+                child: StudentDashboard(username: username),
+              );
             }
 
             if (role == 'admin') {
@@ -89,7 +95,7 @@ class AuthWrapper extends StatelessWidget {
             Text(message),
             const SizedBox(height: 8),
             TextButton(
-              onPressed: () => FirebaseAuth.instance.signOut(),
+              onPressed: () => SessionService.signOut(),
               child: const Text('Log out'),
             ),
           ],

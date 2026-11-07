@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/leave_model.dart';
 import '../services/leave_service.dart';
+import '../services/session_service.dart';
 import '../widgets/weekly_menu_list.dart';
 import 'charges_page.dart';
 import 'complaints_page.dart';
@@ -94,7 +95,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
             icon: const Icon(Icons.logout),
             tooltip: 'Log out',
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                await SessionService.signOut();
+              } catch (e) {
+                debugPrint('Logout failed: $e');
+                messenger.showSnackBar(const SnackBar(
+                  content: Text('Could not log out. Check your internet and try again.'),
+                  backgroundColor: Colors.red,
+                ));
+              }
             },
           ),
         ],

@@ -1,11 +1,37 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import '../models/complaint_model.dart';
 import '../services/complaint_service.dart';
 import '../utils/date_helpers.dart';
 import '../widgets/status_chip.dart';
+import 'package:flutter/foundation.dart' show compute, kIsWeb;
+
+// Firestore documents are limited to 1 MB, so the photo must stay small.
+const _maxPhotoBytes = 600 * 1024;
+
+// Shrinks any photo to a JPEG under _maxPhotoBytes. Done in Dart so it works
+// the same on Android, iOS and web (the web picker ignores resize options).
+// Returns null if the file is not a readable image.
+Uint8List? _compressPhoto(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return null;
+
+  var image = img.bakeOrientation(decoded); // keep phone photos upright
+  if (image.width > 800) image = img.copyResize(image, width: 800);
+
+  for (final quality in [75, 60, 45, 30]) {
+    final out = img.encodeJpg(image, quality: quality);
+    if (out.length <= _maxPhotoBytes) return out;
+  }
+
+  image = img.copyResize(image, width: 500);
+  final out = img.encodeJpg(image, quality: 40);
+  return out.length <= _maxPhotoBytes ? out : null;
+}
 
 // Student: FR-6.1 / 6.2 submit a complaint (optional photo) and track it.
 class ComplaintsPage extends StatefulWidget {
@@ -127,9 +153,7 @@ class _NewComplaintPageState extends State<_NewComplaintPage> {
   String _category = complaintCategories.first;
   String? _photoBase64;
   bool _saving = false;
-
-  // Firestore documents are limited to 1 MB, so the photo must stay small.
-  static const _maxPhotoBytes = 600 * 1024;
+  bool _loadingPhoto = false;
 
   @override
   void dispose() {
@@ -145,23 +169,26 @@ class _NewComplaintPageState extends State<_NewComplaintPage> {
   }
 
   Future<void> _pickPhoto(ImageSource source) async {
+    setState(() => _loadingPhoto = true);
     try {
       final picked = await ImagePicker().pickImage(
         source: source,
-        maxWidth: 800,
-        imageQuality: 60,
+        maxWidth: 1280, // helps on phones; web ignores it, so we compress below
       );
       if (picked == null) return;
 
       final bytes = await picked.readAsBytes();
-      if (bytes.length > _maxPhotoBytes) {
-        _error('That photo is too large. Please choose a smaller one.');
+      final small = await compute(_compressPhoto, bytes);
+      if (small == null) {
+        _error('That file could not be read as a photo.');
         return;
       }
-      setState(() => _photoBase64 = base64Encode(bytes));
+      if (mounted) setState(() => _photoBase64 = base64Encode(small));
     } catch (e) {
       debugPrint('Pick photo failed: $e');
-      _error('Could not load the photo.');
+      _error('Could not load the photo. Please try another one.');
+    } finally {
+      if (mounted) setState(() => _loadingPhoto = false);
     }
   }
 
@@ -242,24 +269,32 @@ class _NewComplaintPageState extends State<_NewComplaintPage> {
               icon: const Icon(Icons.delete_outline),
               label: const Text('Remove photo'),
             ),
-          ] else
+          ] else if (_loadingPhoto)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => _pickPhoto(ImageSource.gallery),
                     icon: const Icon(Icons.photo_library),
-                    label: const Text('Gallery'),
+                    label: Text(kIsWeb ? 'Choose photo' : 'Gallery'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _pickPhoto(ImageSource.camera),
-                    icon: const Icon(Icons.photo_camera),
-                    label: const Text('Camera'),
+                // The camera option doesn't work in desktop browsers.
+                if (!kIsWeb) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _pickPhoto(ImageSource.camera),
+                      icon: const Icon(Icons.photo_camera),
+                      label: const Text('Camera'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           const Padding(

@@ -5,6 +5,7 @@ import '../widgets/custom_text_field.dart';
 import '../widgets/google_sign_in_button.dart';
 import '../utils/validators.dart';
 import 'registration_page.dart';
+import '../services/session_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -22,6 +23,28 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Shown when the user was refused or signed out because the account is
+    // active on another device.
+    final message = SessionService.pendingMessage;
+    SessionService.pendingMessage = null;
+    if (message != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {
